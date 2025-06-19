@@ -8,120 +8,92 @@ import pickle
 import time
 import os
 from selenium import webdriver
+from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.options import Options
 import time
+from playwright.sync_api import sync_playwright
 import pickle
+import tweepy
+from duckduckgo_search import DDGS
+
+# from duckduckgo_search import ddg_images
+import requests
+from bs4 import BeautifulSoup as bs
+import urllib.request
+from PIL import Image
 
 
-X_USER = os.environ.get("X_USER", "MrBeast")
-CACHE_FILE = "seen_tweets.json"
+X_USER = os.environ.get("X_USER", "")
+X_USER_ID = os.environ.get("X_USER_ID", "")
+BEARER_TOKEN = os.environ.get("BEARER_TOKEN", "")
 
 
-def save_cookies(driver, path="obj/cookies.pkl"):
-    with open(path, "wb") as file:
-        pickle.dump(driver.get_cookies(), file)
+client = tweepy.Client(bearer_token=BEARER_TOKEN)
+
+import requests
+import os
+
+bearer_token = os.environ.get("BEARER_TOKEN")
 
 
-def load_cookies(driver, path="obj/cookies.pkl"):
-    try:
-        cookies = pickle.load(open(path, "rb"))
-        for cookie in cookies:
-            if "expiry" in cookie:
-                cookie["expiry"] = int(cookie["expiry"])
-            driver.add_cookie(cookie)
-        return True
-    except FileNotFoundError:
-        return False
+def bearer_oauth(r):
+    r.headers["Authorization"] = f"Bearer {bearer_token}"
+    r.headers["User-Agent"] = "v2TweetLookupPython"
+    return r
 
 
-def getFirefoxDriver(headless=False):
-    options = Options()
-    options.headless = headless
-    driver = webdriver.Firefox(options=options)
-
-    driver.get("https://x.com/")
-    time.sleep(2)
-
-    # Try to load cookies
-    if load_cookies(driver):
-        driver.refresh()
-    else:
-        print("Please log in manually within the browser window...")
-        # Wait some time for manual login
-        time.sleep(
-            60
-        )  # Or wait for user input, or implement smarter wait here
-        save_cookies(driver)
-
-    return driver
-
-
-def twitter_login(driver):
-
-    driver.get("https://twitter.com/login")
-
-    # Fill username
-    driver.find_element_by_xpath(
-        '//*[@id="layers"]/div/div/div/div/div/div/div[2]/div[2]/div/div/div[2]/div[2]/div/div/div/div[4]/label/div/div[2]/div/input'
-    ).send_keys(USERNAME)
-
-    # Fill password
-
-
-def get_latest_tweet(driver, username="MrBeast"):
-    try:
-        driver.get(f"https://x.com/{username}")
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.TAG_NAME, "article"))
+def connect_to_endpoint(url):
+    response = requests.request("GET", url, auth=bearer_oauth)
+    print(response.status_code)
+    if response.status_code != 200:
+        raise Exception(
+            "Request returned an error: {} {}".format(
+                response.status_code, response.text
+            )
         )
+    return response.json()
 
-        articles = driver.find_elements(By.TAG_NAME, "article")
 
-        # Iterate over articles and find first non-pinned tweet
-        for article in articles:
-            try:
-                pinned_label = article.find_element(
-                    By.XPATH, ".//div[@data-testid='pinnedTweet']"
-                )
-                # If pinned tweet found, skip it
-                continue
-            except:
-                # No pinned label found, this is a normal tweet
-                tweet_text_elem = article.find_element(
-                    By.XPATH, ".//div[@data-testid='tweetText']"
-                )
-                tweet_text = tweet_text_elem.text
+def get_user_id(username):
+    url = f"https://api.twitter.com/2/users/by/username/{username}"
+    json_response = connect_to_endpoint(url)
+    return json_response["data"]["id"]
 
-                link_elem = article.find_element(
-                    By.XPATH, ".//a[contains(@href, '/status/')]"
-                )
-                tweet_link = link_elem.get_attribute("href")
 
-                image_elems = article.find_elements(
-                    By.XPATH, ".//img[contains(@src, 'twimg')]"
-                )
-                image_urls = list(
-                    {img.get_attribute("src") for img in image_elems}
-                )
-
-                return {
-                    "text": tweet_text,
-                    "tweet_url": tweet_link,
-                    "images": image_urls,
-                }
-
-    except TimeoutException:
-        print("❌ Timeout: No tweets loaded.")
-    except Exception as e:
-        print("❌ Exception while fetching tweet:", e)
+def get_user_tweets(user_id):
+    url = f"https://api.twitter.com/2/users/{user_id}/tweets"
+    json_response = connect_to_endpoint(url)
+    return json_response
 
 
 if __name__ == "__main__":
-    driver = getFirefoxDriver()
-    data = get_latest_tweet(driver, username=X_USER)
-    driver.quit()
 
-    if data:
-        from pprint import pprint
+    # Fetch user id
+    if not X_USER_ID:
+        X_USER_ID = get_user_id(X_USER)
 
-        pprint(data)
+    # Fetch user tweets
+    tweets = get_user_tweets(X_USER_ID)
+
+    # Fetch first tweet
+    recent_tweet = tweets[0]["text"]
+
+    # Fetch text up until "https"
+    index = recent_tweet.find("https")
+
+    if index != -1:
+        recent_tweet = recent_tweet[:index]
+        print(recent_tweet)
+
+    recent_tweet = recent_tweet.strip()
+
+    # Search for image with DDGS
+    results = DDGS().images(
+        keywords=recent_tweet,
+        size=None,
+        type_image=None,
+        layout=None,
+        license_image=None,
+        max_results=100,
+    )
+    urllib.request.urlretrieve(str(results[0]["image"]), "image.jpeg")
