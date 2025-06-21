@@ -11,6 +11,28 @@ from selenium.webdriver.firefox.options import Options
 GROUP_NAME = os.environ.get("GROUP_NAME", "")
 
 
+def getFirefoxDriver(headless=False):
+    options = Options()
+    options.headless = headless
+    driver = webdriver.Firefox(options=options)
+
+    driver.get("https://x.com/")
+    time.sleep(2)
+
+    # Try to load cookies
+    if load_cookies(driver):
+        driver.refresh()
+    else:
+        print("Please log in manually within the browser window...")
+        # Wait some time for manual login
+        time.sleep(
+            60
+        )  # Or wait for user input, or implement smarter wait here
+        save_cookies(driver)
+
+    return driver
+
+
 # ─── SEND MESSAGE TO GROUP BY NAME ──────────────────────────────
 def send_to_whatsapp(message, image_path):
     options = Options()
