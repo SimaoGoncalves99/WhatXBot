@@ -7,49 +7,62 @@ from utils.messages import get_message
 import os
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
+import pickle
 
 GROUP_NAME = os.environ.get("GROUP_NAME", "")
 
 
+def save_cookies(driver, path="obj/cookies.pkl"):
+    with open(path, "wb") as file:
+        pickle.dump(driver.get_cookies(), file)
+
+
+def load_cookies(driver, path="obj/cookies.pkl"):
+    try:
+        cookies = pickle.load(open(path, "rb"))
+        for cookie in cookies:
+            if "expiry" in cookie:
+                cookie["expiry"] = int(cookie["expiry"])
+            driver.add_cookie(cookie)
+        return True
+    except FileNotFoundError:
+        return False
+
+
 def getFirefoxDriver(headless=False):
     options = Options()
-    options.headless = headless
-    driver = webdriver.Firefox(options=options)
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument(
+        "--user-data-dir=/root/whatsapp_session"
+    )  # Reuse login
+    if headless:
+        options.add_argument("--headless")
 
-    driver.get("https://x.com/")
+    driver = webdriver.Firefox(options=options)
+    driver.get("https://web.whatsapp.com")
     time.sleep(2)
 
-    # Try to load cookies
-    if load_cookies(driver):
-        driver.refresh()
-    else:
-        print("Please log in manually within the browser window...")
-        # Wait some time for manual login
-        time.sleep(
-            60
-        )  # Or wait for user input, or implement smarter wait here
-        save_cookies(driver)
+    # # Try to load cookies
+    # if load_cookies(driver):
+    #     driver.refresh()
+    # else:
+    print("Please log in manually within the browser window...")
+    # Wait some time for manual login
+    time.sleep(60)  # Or wait for user input, or implement smarter wait here
+    save_cookies(driver)
 
     return driver
 
 
 # ─── SEND MESSAGE TO GROUP BY NAME ──────────────────────────────
 def send_to_whatsapp(message, image_path):
-    options = Options()
-    options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument(
-        "--user-data-dir=/root/whatsapp_session"
-    )  # Reuse login
-
-    driver = webdriver.Firefox(options=options)
-    driver.get("https://web.whatsapp.com")
 
     print("Waiting for WhatsApp Web to load...")
-    time.sleep(10)
+    # time.sleep(10)
 
     try:
+        driver = getFirefoxDriver()
         # Search for the group
         search_box = driver.find_element(
             By.XPATH, '//div[@contenteditable="true"][@data-tab="3"]'
@@ -104,4 +117,4 @@ def send_to_whatsapp(message, image_path):
 # ─── MAIN ───────────────────────────────────────────────────────
 if __name__ == "__main__":
     # text, image_path = get_message()
-    send_to_whatsapp("", "/home/scg/WhatXBot/image.jpeg")
+    send_to_whatsapp("", "")
