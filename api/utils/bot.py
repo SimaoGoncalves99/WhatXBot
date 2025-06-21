@@ -21,6 +21,52 @@ import requests
 from bs4 import BeautifulSoup as bs
 import urllib.request
 from PIL import Image
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+import time
+import os
+
+# CONFIG
+SESSION_DIR = "whatsapp_session"
+GROUP_NAME = "Your Group Name"
+MESSAGE = "Automated message sent without scanning QR!"
+REPEAT = 1
+
+# Load saved session
+options = Options()
+options.add_argument(f"--user-data-dir={os.path.abspath(SESSION_DIR)}")
+driver = webdriver.Chrome(options=options)
+
+# Launch WhatsApp Web
+driver.get("https://web.whatsapp.com")
+time.sleep(10)  # Give it time to fully load
+
+# Find the group
+search_box = driver.find_element(
+    By.XPATH, '//div[@contenteditable="true"][@data-tab="3"]'
+)
+search_box.click()
+time.sleep(1)
+search_box.send_keys(GROUP_NAME)
+time.sleep(2)
+
+group = driver.find_element(By.XPATH, f'//span[@title="{GROUP_NAME}"]')
+group.click()
+time.sleep(2)
+
+# Send message
+for _ in range(REPEAT):
+    msg_box = driver.find_element(
+        By.XPATH, '//div[@contenteditable="true"][@data-tab="10"]'
+    )
+    msg_box.send_keys(MESSAGE)
+    msg_box.send_keys(Keys.ENTER)
+    time.sleep(1)
+
+print("Message sent successfully!")
+driver.quit()
 
 
 X_USER = os.environ.get("X_USER", "")
@@ -76,7 +122,7 @@ if __name__ == "__main__":
     tweets = get_user_tweets(X_USER_ID)
 
     # Fetch first tweet
-    recent_tweet = tweets[0]["text"]
+    recent_tweet = tweets["data"][0]["text"]
 
     # Fetch text up until "https"
     index = recent_tweet.find("https")
