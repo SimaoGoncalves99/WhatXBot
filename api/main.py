@@ -8,16 +8,18 @@ import os
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 import pickle
+from tqdm import tqdm
+import pywhatkit
 
 GROUP_NAME = os.environ.get("GROUP_NAME", "")
 
 
-def save_cookies(driver, path="obj/cookies.pkl"):
+def save_cookies(driver, path="./cookies.pkl"):
     with open(path, "wb") as file:
         pickle.dump(driver.get_cookies(), file)
 
 
-def load_cookies(driver, path="obj/cookies.pkl"):
+def load_cookies(driver, path="./cookies.pkl"):
     try:
         cookies = pickle.load(open(path, "rb"))
         for cookie in cookies:
@@ -33,88 +35,96 @@ def getFirefoxDriver(headless=False):
     options = Options()
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument(
-        "--user-data-dir=/root/whatsapp_session"
-    )  # Reuse login
+
     if headless:
         options.add_argument("--headless")
 
     driver = webdriver.Firefox(options=options)
     driver.get("https://web.whatsapp.com")
-    time.sleep(2)
+    time.sleep(5)
 
-    # # Try to load cookies
-    # if load_cookies(driver):
-    #     driver.refresh()
-    # else:
-    print("Please log in manually within the browser window...")
-    # Wait some time for manual login
-    time.sleep(60)  # Or wait for user input, or implement smarter wait here
-    save_cookies(driver)
+    # Load cookies if they exist
+    if load_cookies(driver):
+        driver.refresh()
+        time.sleep(10)  # Give time after refresh
+    else:
+        print("Please log in manually...")
+        # Wait until WhatsApp is logged in (wait for chat sidebar)
+        while True:
+            try:
+                driver.find_element(By.ID, "pane-side")  # Sidebar = logged in
+                break
+            except:
+                time.sleep(2)
+
+        save_cookies(driver)
+        print("✅ Cookies saved after successful login.")
 
     return driver
 
 
-# ─── SEND MESSAGE TO GROUP BY NAME ──────────────────────────────
-def send_to_whatsapp(message, image_path):
-
-    print("Waiting for WhatsApp Web to load...")
-    # time.sleep(10)
+def send_message_and_image(group_name, message=None, image_path=None):
+    driver = getFirefoxDriver()
 
     try:
-        driver = getFirefoxDriver()
-        # Search for the group
+        # Locate the search box and enter group name
+        print(f"🔍 Searching for group: {group_name}")
         search_box = driver.find_element(
-            By.XPATH, '//div[@contenteditable="true"][@data-tab="3"]'
+            By.XPATH, '//div[@title="Search input textbox"]'
         )
+        search_box.click()
         search_box.clear()
-        search_box.send_keys(GROUP_NAME)
+        search_box.send_keys(group_name)
         time.sleep(3)
 
-        group_title = driver.find_element(
-            By.XPATH, f'//span[@title="{GROUP_NAME}"]'
-        )
-        group_title.click()
+        group = driver.find_element(By.XPATH, f'//span[@title="{group_name}"]')
+        group.click()
         time.sleep(2)
 
-        # Send the text message
-        input_box = driver.find_element(
-            By.XPATH, '//div[@contenteditable="true"][@data-tab="10"]'
-        )
-        input_box.send_keys(message + Keys.ENTER)
-        print("Message sent.")
+        # Send text message
+        if message:
+            print("💬 Sending message...")
+            input_box = driver.find_element(
+                By.XPATH, '//div[@contenteditable="true"][@data-tab="10"]'
+            )
+            input_box.send_keys(message + Keys.ENTER)
+            print("✅ Message sent.")
 
-        # Send the image
+        # Send image
         if image_path and os.path.exists(image_path):
-            attach_btn = driver.find_element(
+            print("📎 Attaching image...")
+            attach_button = driver.find_element(
                 By.XPATH, '//div[@title="Attach"]'
             )
-            attach_btn.click()
+            attach_button.click()
             time.sleep(1)
 
             file_input = driver.find_element(
                 By.XPATH,
                 '//input[@accept="image/*,video/mp4,video/3gpp,video/quicktime"]',
             )
-            file_input.send_keys(image_path)
-            time.sleep(2)
+            file_input.send_keys(os.path.abspath(image_path))
+            time.sleep(3)
 
-            send_btn = driver.find_element(
+            print("📤 Sending image...")
+            send_button = driver.find_element(
                 By.XPATH, '//span[@data-icon="send"]'
             )
-            send_btn.click()
-            print("Image sent.")
+            send_button.click()
+            print("✅ Image sent.")
 
-        time.sleep(2)
+        time.sleep(5)
 
     except Exception as e:
-        print(f"Error: {e}")
-
+        print(f"❌ Error: {e}")
     finally:
         driver.quit()
 
 
-# ─── MAIN ───────────────────────────────────────────────────────
+# Example usage
 if __name__ == "__main__":
-    # text, image_path = get_message()
-    send_to_whatsapp("", "")
+    send_message_and_image(
+        group_name=GROUP_NAME,
+        message="Hello from Ubuntu bot! 🤖",
+        image_path="your_image.jpg",  # Set this or leave as None
+    )
