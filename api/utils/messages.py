@@ -100,7 +100,9 @@ async def fetch_baller_name():
 
 async def fetch_baller_image(baller_name: str) -> bytes:
 
-    results = DDGS().images(keywords=baller_name, max_results=1)
+    results = DDGS().images(
+        keywords="Footballer: " + baller_name, max_results=1
+    )
     image_url = results[0]["image"]
 
     async with httpx.AsyncClient() as client:
