@@ -28,6 +28,7 @@ def bearer_oauth(r):
     return r
 
 
+# Connect to endpoint
 def connect_to_endpoint(url):
     response = requests.request("GET", url, auth=bearer_oauth)
     print(response.status_code)
