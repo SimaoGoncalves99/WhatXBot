@@ -2,8 +2,14 @@ import os
 import tweepy
 from duckduckgo_search import DDGS
 import requests
-import urllib.request
+from typing import Optional, Any
+import httpx
+import logging
 
+X_USER = os.environ.get("X_USER", "")
+GROUP_ID = os.environ.get("GROUP_ID", "")
+BEARER_TOKEN = os.environ.get("BEARER_TOKEN", "")
+X_USER_ID = os.environ.get("X_USER_ID", "")
 
 X_USER = os.environ.get("X_USER", "")
 GROUP_ID = os.environ.get("GROUP_ID", "")
@@ -11,6 +17,9 @@ BEARER_TOKEN = os.environ.get("BEARER_TOKEN", "")
 
 x_user_id = os.environ.get("X_USER_ID", "")
 client = tweepy.Client(bearer_token=BEARER_TOKEN)
+
+# Logger
+logger = logging.getLogger(__name__)
 
 
 def bearer_oauth(r):
@@ -31,27 +40,22 @@ def connect_to_endpoint(url):
     return response.json()
 
 
-def get_user_id(username):
+async def get_user_id(username):
     url = f"https://api.twitter.com/2/users/by/username/{username}"
     json_response = connect_to_endpoint(url)
     return json_response["data"]["id"]
 
 
-def get_user_tweets(user_id):
+async def get_user_tweets(user_id):
     url = f"https://api.twitter.com/2/users/{user_id}/tweets"
     json_response = connect_to_endpoint(url)
     return json_response
 
 
-def get_message():
-    global x_user_id
+async def recent_tweet(x_user_id):
 
-    # Fetch user id
-    if not x_user_id:
-        x_user_id = get_user_id(X_USER)
-
-    # Fetch user tweets
-    tweets = get_user_tweets(x_user_id)
+    # Fetch user tweets (wait for the response)
+    tweets = await get_user_tweets(x_user_id)
 
     # Fetch first tweet
     recent_tweet = tweets["data"][0]["text"]
@@ -61,19 +65,49 @@ def get_message():
 
     if index != -1:
         recent_tweet = recent_tweet[:index]
-        print(recent_tweet)
 
     recent_tweet = recent_tweet.strip()
 
-    # Search for image with DDGS
-    results = DDGS().images(
-        keywords=recent_tweet,
-        size=None,
-        type_image=None,
-        layout=None,
-        license_image=None,
-        max_results=100,
-    )
-    image = urllib.request.urlretrieve(str(results[0]["image"]), "image.jpeg")
+    return recent_tweet
 
-    return recent_tweet, os.path.abspath("image.jpg")
+
+async def fetch_baller_name():
+
+    # Fetch the most recent tweet of user x_user_id
+    if X_USER_ID:
+        try:
+            logger.info(
+                "Fetching the most recent tweet of the specified user..."
+            )
+            tweet = await recent_tweet(X_USER_ID)
+        except Exception as e:
+            logger.error(e)
+            logger.info("Fetching user id using the Twitter client API...")
+            if X_USER:
+                try:
+                    x_user_id = await get_user_id(X_USER)
+                except Exception as e:
+                    raise RuntimeError(e)
+                logger.info(
+                    "Fetching the most recent tweet of the specified user..."
+                )
+                tweet = await recent_tweet(x_user_id)
+            else:
+                logger.error("Provide a valid X username!")
+
+    return tweet
+
+
+async def fetch_baller_image(baller_name: str) -> bytes:
+
+    results = DDGS().images(keywords=baller_name, max_results=1)
+    image_url = results[0]["image"]
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(image_url)
+        response.raise_for_status()
+        return response.content
+
+
+# if __name__ == "__main__":
+#     get_message()

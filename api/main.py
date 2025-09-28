@@ -1,130 +1,94 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-import time
-from utils.messages import get_message
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from typing import Union, Optional, Dict
+import logging
 import os
-from selenium import webdriver
-from selenium.webdriver.firefox.options import Options
-import pickle
-from tqdm import tqdm
+import tweepy
+from duckduckgo_search import DDGS
+from api.utils.messages import (
+    fetch_baller_name,
+    fetch_baller_image,
+    BEARER_TOKEN,
+    logger,
+)
+import tempfile
 import pywhatkit
-
-GROUP_NAME = os.environ.get("GROUP_NAME", "")
-
-
-def save_cookies(driver, path="./cookies.pkl"):
-    with open(path, "wb") as file:
-        pickle.dump(driver.get_cookies(), file)
+from datetime import datetime, timedelta
 
 
-def load_cookies(driver, path="./cookies.pkl"):
-    try:
-        cookies = pickle.load(open(path, "rb"))
-        for cookie in cookies:
-            if "expiry" in cookie:
-                cookie["expiry"] = int(cookie["expiry"])
-            driver.add_cookie(cookie)
-        return True
-    except FileNotFoundError:
-        return False
+# Twitter client
+client = tweepy.Client(bearer_token=BEARER_TOKEN)
+
+GROUP_ID = os.environ.get("GROUP_ID", "")
 
 
-def getFirefoxDriver(headless=False):
-    options = Options()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-
-    if headless:
-        options.add_argument("--headless")
-
-    driver = webdriver.Firefox(options=options)
-    driver.get("https://web.whatsapp.com")
-    time.sleep(5)
-
-    # Load cookies if they exist
-    if load_cookies(driver):
-        driver.refresh()
-        time.sleep(10)  # Give time after refresh
-    else:
-        print("Please log in manually...")
-        # Wait until WhatsApp is logged in (wait for chat sidebar)
-        while True:
-            try:
-                driver.find_element(By.ID, "pane-side")  # Sidebar = logged in
-                break
-            except:
-                time.sleep(2)
-
-        save_cookies(driver)
-        print("✅ Cookies saved after successful login.")
-
-    return driver
+app = FastAPI()
 
 
-def send_message_and_image(group_name, message=None, image_path=None):
-    driver = getFirefoxDriver()
-
-    try:
-        # Locate the search box and enter group name
-        print(f"🔍 Searching for group: {group_name}")
-        search_box = driver.find_element(
-            By.XPATH, '//div[@title="Search input textbox"]'
-        )
-        search_box.click()
-        search_box.clear()
-        search_box.send_keys(group_name)
-        time.sleep(3)
-
-        group = driver.find_element(By.XPATH, f'//span[@title="{group_name}"]')
-        group.click()
-        time.sleep(2)
-
-        # Send text message
-        if message:
-            print("💬 Sending message...")
-            input_box = driver.find_element(
-                By.XPATH, '//div[@contenteditable="true"][@data-tab="10"]'
-            )
-            input_box.send_keys(message + Keys.ENTER)
-            print("✅ Message sent.")
-
-        # Send image
-        if image_path and os.path.exists(image_path):
-            print("📎 Attaching image...")
-            attach_button = driver.find_element(
-                By.XPATH, '//div[@title="Attach"]'
-            )
-            attach_button.click()
-            time.sleep(1)
-
-            file_input = driver.find_element(
-                By.XPATH,
-                '//input[@accept="image/*,video/mp4,video/3gpp,video/quicktime"]',
-            )
-            file_input.send_keys(os.path.abspath(image_path))
-            time.sleep(3)
-
-            print("📤 Sending image...")
-            send_button = driver.find_element(
-                By.XPATH, '//span[@data-icon="send"]'
-            )
-            send_button.click()
-            print("✅ Image sent.")
-
-        time.sleep(5)
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-    finally:
-        driver.quit()
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
 
 
-# Example usage
+@app.get("/items/{item_id}")
+def read_item(item_id: int, q: Union[str, None] = None):
+    return {"item_id": item_id, "q": q}
+
+
+@app.get("/baller/")
+async def baller_name() -> Dict[str, str]:
+
+    # Fetch the most recent tweet of user x_user_id
+    tweet = await fetch_baller_name()
+
+    logger.info(f"Found baller: {tweet}")
+
+    result = {"baller": tweet}
+
+    return result
+
+
+@app.get("/baller/{baller_name}")
+async def baller_image(baller_name: str):
+
+    image_bytes = await fetch_baller_image(baller_name)
+
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".jpeg")
+    tmp_file.write(image_bytes)
+    tmp_file.close()
+    return FileResponse(tmp_file.name, media_type="image/jpeg")
+
+
+@app.post("share_baller/{phone_number}")
+async def send_baller_to_group(phone_number: str):
+    baller_name = await fetch_baller_name()
+    if not baller_name:
+        return {"error": "No baller found"}
+
+    image_bytes = await fetch_baller_image(baller_name)
+
+    # Current time + 1 minute
+    now = datetime.now() + timedelta(minutes=1)
+
+    # Send to WhatsApp group (example using your bot)
+    pywhatkit.sendwhatmsg_to_group(
+        GROUP_ID,
+        "test message",
+        time_hour=now.hour,
+        time_min=now.minute,
+    )
+
+    return {"status": "sent", "baller": baller_name}
+
+
 if __name__ == "__main__":
-    send_message_and_image(
-        group_name=GROUP_NAME,
-        message="Hello from Ubuntu bot! 🤖",
-        image_path="your_image.jpg",  # Set this or leave as None
+
+    # Current time + 1 minute
+    now = datetime.now() + timedelta(minutes=1)
+
+    pywhatkit.sendwhatmsg_to_group(
+        GROUP_ID,
+        "Hey! This is a test message, please ignore it.",
+        time_hour=now.hour,
+        time_min=now.minute,
     )
